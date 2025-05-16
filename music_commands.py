@@ -44,14 +44,14 @@ class Music(commands.Cog):
         """Присоединяется к голосовому каналу пользователя."""
         if ctx.author.voice is None:
             return await ctx.send("Вы не подключены к голосовому каналу.")
-        
+    
         destination = ctx.author.voice.channel
-        
+    
         if ctx.voice_client:
             await ctx.voice_client.move_to(destination)
         else:
-            ctx.voice_client = await destination.connect()
-        
+            await destination.connect()
+    
         await ctx.send(f"✅ Подключен к каналу: {destination.name}")
 
     @commands.command(name='play', help='Воспроизводит музыку из YouTube')
@@ -70,12 +70,23 @@ class Music(commands.Cog):
         # Обрабатываем поисковый запрос или URL
         async with ctx.typing():
             try:
+                # Проверяем, является ли URL плейлистом
+                is_playlist = False
+                if url.startswith(('http://', 'https://')):
+                    is_playlist = await YTDLSource.is_playlist(url, loop=self.bot.loop)
+                
+                if is_playlist:
+                    await searching_message.edit(
+                        content=f'ℹ️ Обнаружен плейлист YouTube. Добавляю только первый трек. Используйте `!playlist {url}` для добавления всего плейлиста.'
+                    )
+                
                 # Получаем аудио-источник
                 source = await YTDLSource.from_url(
                     url, 
                     loop=self.bot.loop, 
                     stream=True,
-                    ffmpeg_path=self.ffmpeg_path
+                    ffmpeg_path=self.ffmpeg_path,
+                    process_playlist=False  # Не обрабатываем плейлист полностью
                 )
                 
                 # Обновляем сообщение с результатом поиска
@@ -98,6 +109,78 @@ class Music(commands.Cog):
                     f'💡 Попробуйте другой трек или перезапустите бота'
                 )
                 print(f"Подробная ошибка: {e}")
+    
+    @commands.command(name='playlist', help='Воспроизводит весь плейлист YouTube')
+    async def playall(self, ctx, *, url):
+        """Воспроизводит весь плейлист YouTube."""
+        # Проверяем, подключен ли бот к голосовому каналу
+        if not ctx.voice_client:
+            await ctx.invoke(self.join)
+        
+        # Получаем плеер для этой гильдии
+        player = self.get_player(ctx)
+        
+        # Отправляем промежуточное сообщение
+        searching_message = await ctx.send("🔄 Обрабатываю плейлист...")
+        
+        # Обрабатываем URL плейлиста
+        async with ctx.typing():
+            try:
+                # Проверяем, является ли это плейлистом
+                is_playlist = False
+                if url.startswith(('http://', 'https://')):
+                    is_playlist = await YTDLSource.is_playlist(url, loop=self.bot.loop)
+                
+                if not is_playlist:
+                    # Если это не плейлист, обрабатываем как обычный трек
+                    source = await YTDLSource.from_url(
+                        url, 
+                        loop=self.bot.loop, 
+                        stream=True,
+                        ffmpeg_path=self.ffmpeg_path
+                    )
+                    
+                    await searching_message.edit(
+                        content=f'ℹ️ Это не плейлист. Добавлен трек: **{source.title}**{source.duration_string}'
+                    )
+                    
+                    await player.queue.put(source)
+                    return
+                
+                # Получаем все треки из плейлиста
+                playlist_title, tracks = await YTDLSource.get_playlist_items(
+                    url,
+                    loop=self.bot.loop,
+                    ffmpeg_path=self.ffmpeg_path
+                )
+                
+                if not tracks:
+                    await searching_message.edit(
+                        content=f'❌ Плейлист не содержит треков или не удалось их извлечь.'
+                    )
+                    return
+                
+                # Добавляем все треки в очередь
+                for track in tracks:
+                    await player.queue.put(track)
+                
+                # Обновляем сообщение с результатом
+                await searching_message.edit(
+                    content=f'✅ Добавлен плейлист: **{playlist_title}** ({len(tracks)} треков)'
+                )
+            
+            except ValueError as e:
+                await searching_message.edit(
+                    content=f'❌ Ошибка при обработке плейлиста: {str(e)}\n💡 Проверьте ссылку на плейлист.'
+                )
+                print(f"Ошибка при воспроизведении плейлиста: {e}")
+            
+            except Exception as e:
+                await searching_message.edit(
+                    content=f'❌ Неожиданная ошибка: {str(e)[:100]}...\n'
+                    f'💡 Возможно, плейлист слишком большой или недоступен.'
+                )
+                print(f"Подробная ошибка плейлиста: {e}")
     
     @commands.command(name='pause', help='Приостанавливает текущий трек')
     async def pause(self, ctx):

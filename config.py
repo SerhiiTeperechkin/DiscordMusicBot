@@ -64,9 +64,9 @@ YTDL_FORMAT_OPTIONS = {
     'format': 'bestaudio/best',
     'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
     'restrictfilenames': True,
-    'noplaylist': False,
+    'noplaylist': False,  # Разрешаем плейлисты
     'nocheckcertificate': True,
-    'ignoreerrors': True,
+    'ignoreerrors': False,  # Изменено для обнаружения ошибок в плейлистах
     'logtostderr': False,
     'quiet': True,
     'no_warnings': True,
@@ -74,12 +74,22 @@ YTDL_FORMAT_OPTIONS = {
     'source_address': '0.0.0.0',
     'force-ipv4': True,
     'cachedir': False,
-    'extract_flat': 'in_playlist',
+    'extract_flat': False,  # Изменено для получения полных данных плейлиста
     'socket_timeout': 15,
     'retries': 15,
     'fragment_retries': 15,
     'skip_download': False,
 }
+
+# Настройки для получения данных о плейлисте
+YTDL_PLAYLIST_OPTIONS = YTDL_FORMAT_OPTIONS.copy()
+YTDL_PLAYLIST_OPTIONS.update({
+    'extract_flat': 'in_playlist',  # Режим для определения плейлиста
+    'dump_single_json': True,
+    'noplaylist': False,  # Важно: разрешаем обработку плейлистов
+    'playlistend': 100,    # Ограничиваем количество треков для анализа
+    'ignore_no_formats_error': True,
+})
 
 # Настройки FFmpeg
 FFMPEG_OPTIONS = {
